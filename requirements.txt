@@ -1,0 +1,27 @@
+# Core Framework
+Django>=4.2,<5.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Google Trends & API
+pytrends>=4.9.0
+urllib3<2
+
+# Time Series Analysis
+statsmodels>=0.14.0
+
+# Visualization
+plotly>=5.14.0
+
+# AI Integration
+google-generativeai>=0.3.0
+markdown>=3.4.0
+
+# Environment Variables (IMPORTANT - Add this!)
+python-decouple>=3.8
+
+# Production Server (For deployment)
+gunicorn>=21.2.0
+whitenoise>=6.5.0
