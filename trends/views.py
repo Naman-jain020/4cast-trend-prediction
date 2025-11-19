@@ -88,14 +88,12 @@ def save_data_to_file(keyword, df):
         print(f"Error saving data to file: {e}")
 
 def get_pytrends_instance():
-    """Create a properly configured TrendReq instance with enhanced headers"""
-    # Rotate user agents to avoid detection
+    """Create a properly configured TrendReq instance for production"""
     user_agents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     ]
     
     selected_ua = random.choice(user_agents)
@@ -115,38 +113,42 @@ def get_pytrends_instance():
         'DNT': '1'
     }
     
-    # Create TrendReq with enhanced configuration
-    pytrends = TrendReq(
-        hl='en-US',
-        tz=360,
-        timeout=(15, 90),  # Increased timeout
-        retries=5,  # More retries
-        backoff_factor=1.0,  # Longer backoff
-        requests_args={
-            'headers': headers,
-            'verify': True
-        }
-    )
+    try:
+        # Production-friendly timeout settings
+        pytrends = TrendReq(
+            hl='en-US',
+            tz=360,
+            timeout=(30, 120),  # Longer timeout for production
+            requests_args={'headers': headers, 'verify': True}
+        )
+    except Exception as e:
+        print(f"Error creating pytrends instance: {e}")
+        # Fallback to basic configuration
+        pytrends = TrendReq(hl='en-US', tz=360, timeout=(30, 120))
     
     return pytrends
 
-def fetch_google_trends_data(pytrends, keyword, retries=8):
-    """Fetch Google Trends data with enhanced retry logic"""
+
+def fetch_google_trends_data(pytrends, keyword, retries=3):
+    """Fetch Google Trends data with enhanced error handling for production"""
     for i in range(retries):
         try:
-            # Progressive delay strategy
+            # Longer wait times in production
             if i == 0:
-                wait_time = random.uniform(2, 4)
+                wait_time = random.uniform(3, 5)
             else:
-                wait_time = min((2 ** i) + random.uniform(3, 7), 60)  # Cap at 60 seconds
+                wait_time = min((2 ** i) + random.uniform(5, 10), 90)
             
             print(f"Attempt {i + 1}/{retries} for {keyword}. Waiting {wait_time:.2f} seconds...")
             time.sleep(wait_time)
             
-            # Recreate instance every 2 attempts to get fresh session
-            if i > 0 and i % 2 == 0:
-                print(f"Recreating pytrends instance for fresh session...")
+            # Recreate instance more frequently in production
+            if i > 0:
+                print(f"Recreating pytrends instance...")
                 pytrends = get_pytrends_instance()
+            
+            # Set longer timeout for production
+            pytrends.timeout = (30, 120)  # (connect timeout, read timeout)
             
             # Build payload and fetch data
             pytrends.build_payload(kw_list=[keyword], timeframe='today 5-y', geo='IN')
@@ -162,20 +164,34 @@ def fetch_google_trends_data(pytrends, keyword, retries=8):
             error_str = str(e)
             print(f"✗ Error on attempt {i + 1} for {keyword}: {error_str}")
             
-            # Handle different error types
+            # Handle timeout specifically
+            if 'timeout' in error_str.lower() or 'timed out' in error_str.lower():
+                print(f"⚠ Timeout detected. Increasing wait time...")
+                time.sleep(random.uniform(10, 15))
+                continue
+            
+            # Handle urllib3 errors
+            if 'method_whitelist' in error_str or 'allowed_methods' in error_str:
+                print(f"⚠ urllib3 compatibility issue detected. Recreating instance...")
+                pytrends = get_pytrends_instance()
+                time.sleep(random.uniform(3, 5))
+                continue
+            
+            # Handle rate limiting
             if '429' in error_str:
-                wait_time = min((3 ** i) + random.uniform(5, 10), 120)
+                wait_time = min((3 ** i) + random.uniform(10, 20), 120)
                 print(f"⚠ Rate limit (429). Waiting {wait_time:.2f} seconds...")
                 time.sleep(wait_time)
             elif '500' in error_str or '503' in error_str:
-                wait_time = random.uniform(5, 10)
+                wait_time = random.uniform(10, 15)
                 print(f"⚠ Server error. Waiting {wait_time:.2f} seconds...")
                 time.sleep(wait_time)
             else:
                 print(f"⚠ Unexpected error: {error_str}")
-                time.sleep(random.uniform(3, 6))
+                time.sleep(random.uniform(5, 10))
     
-    raise Exception(f"Failed to fetch data for keyword: {keyword} after {retries} retries. Google Trends is blocking requests. Please try: 1) Using cached data 2) Waiting a few hours 3) Using a VPN/different network")
+    raise Exception(f"Failed to fetch data for keyword: {keyword} after {retries} retries. Google Trends may be blocking requests from this server. Try: 1) Using cached data 2) Uploading CSV file 3) Trying again later")
+
 
 def complex_graph_data_to_text(graph_data):
     """Convert graph data to text description for AI analysis"""
